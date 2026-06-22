@@ -1,0 +1,25 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+
+# ─── L1 教学专用 profile ──────────────────────────────────────────────────
+# 让 lessons/L1/ 这个独立教学文件夹既能编译、又能测试、又能跑部署脚本。
+# 学员在工程根目录通过 FOUNDRY_PROFILE=l1 forge build / test / script 来切换。
+[profile.l1]
+src = "lessons/L1"
+test = "lessons/L1"
+script = "lessons/L1"
+out = "out-l1"
+libs = ["lib"]
+
+# ─── L2 教学专用 profile ──────────────────────────────────────────────────
+# 用法同 L1：FOUNDRY_PROFILE=l2 forge build / test / script
+[profile.l2]
+src = "lessons/L2"
+test = "lessons/L2"
+script = "lessons/L2"
+out = "out-l2"
+libs = ["lib"]
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

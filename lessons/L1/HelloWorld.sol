@@ -75,7 +75,7 @@ contract HelloWorld {
     //   • constructor 也可以带参数，但本课先用最简单的无参版本。
     // ─────────────────────────────────────────────────────────────────────
     constructor() {
-        greeting = "Hello, World";
+        greeting = "Hello, linghuan";
         // 部署时也发一条事件，方便前端"我刚部署，初始问候语是什么"。
         // address(0) 表示"零地址"，这里语义是"没人，是构造函数自己设的"。
         emit GreetingChanged(address(0), greeting);
@@ -106,7 +106,31 @@ contract HelloWorld {
     //     当一个 external 函数的参数不需要被修改时，calldata 优于 memory；
     //   • msg.sender 是 Solidity 内置全局变量，表示"调用本函数的那个地址"。
     // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────
+    // 【补充说明】calldata 是啥？数据位置（Data Location）详解
+    //
+    //   • Solidity 中「引用类型」（如 string / bytes / 数组 / 结构体）
+    //     必须明确告诉编译器数据存放在哪个"位置"，共有 3 种：
+    //
+    //     1) storage   → 链上永久存储（状态变量），读写都贵（花 gas）；
+    //     2) memory    → 临时内存，仅存在于函数执行期间，函数结束即销毁；
+    //     3) calldata  → 「调用数据区」，是外部调用时随交易一起传进来的只读数据，
+    //                    类似"只读的快递包裹"，数据原封不动从外部送到函数里。
+    //
+    //   • calldata 的两大特点：
+    //       ① 只读：你不能在函数里修改 calldata 变量的内容（如 newGreeting[0] = 'x' 会报错）；
+    //       ② 更省 gas：因为它不需要像 memory 那样把数据复制一份到内存里，
+    //         数据本身就躺在「调用数据」里，拿来即用，所以最便宜。
+    //
+    //   • 使用场景：当一个 external 函数的参数是引用类型且不需要被修改时，
+    //     优先用 calldata，这是 Solidity 官方推荐的"省钱最佳实践"。
+    //
+    //   • 限制：calldata 只能用于 external 函数的参数，
+    //     不能用于 internal 函数参数、不能用于返回值、也不能在函数内部声明局部变量。
+    // ─────────────────────────────────────────────────────────────────────
     function setGreeting(string calldata newGreeting) external {
+        // 把传入的 calldata 字符串赋值给 storage 状态变量 greeting
+        // （calldata → storage 的赋值会把数据拷贝到链上存储，要花 gas）
         greeting = newGreeting;
         emit GreetingChanged(msg.sender, newGreeting);
     }
@@ -121,6 +145,10 @@ contract HelloWorld {
     //
     //   ⚠️ Solidity 拼接字符串需要先转成 bytes 再用 abi.encodePacked，
     //      最后再 string 强转回来。这是入门最容易踩的小坑。
+    //
+    //   💡 pure 允许读取函数的入参（calldata/memory）和局部变量，
+    //      禁止的是读写链上状态（storage、msg.sender、block.timestamp 等）。
+    //      所以 sayHi 读 name 是合法的，因为它不在 storage 里，而是调用者传进来的参数。
     // ─────────────────────────────────────────────────────────────────────
     function sayHi(string calldata name) external pure returns (string memory) {
         return string(abi.encodePacked("Hi, ", name));

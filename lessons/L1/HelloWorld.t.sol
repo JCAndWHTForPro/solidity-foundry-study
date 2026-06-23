@@ -4,6 +4,25 @@
 //
 // 📚 教学讲义全部写在注释里。
 //    讲师可逐段念给学员，让他们理解「为什么要写测试」+「怎么写测试」。
+//
+// ❓ 常见问题：这个测试文件（.t.sol）能部署到链上吗？
+//
+//   技术上：可以编译，也"能"部署，但【绝对不应该】部署到主网或生产环境。
+//
+//   原因如下：
+//   1. 测试合约继承了 forge-std/Test.sol，而 Test.sol 内部依赖大量
+//      Foundry 专属的 cheatcode（如 vm.prank / vm.expectEmit 等）。
+//      这些 cheatcode 本质是通过一个特殊地址
+//      0x7109709ECfa91a80626fF3989D68f67F5b1DD12d（Vm 接口）调用的，
+//      该地址只在 Foundry 的沙盒 EVM 里存在，主网上根本没有对应合约，
+//      调用会直接 revert 或静默失败。
+//
+//   2. 测试合约本身没有任何业务价值，部署只会浪费 gas。
+//
+//   3. 安全风险：测试合约往往包含特权操作（如随意伪造 msg.sender），
+//      若意外部署，可能被攻击者利用。
+//
+//   ✅ 结论：.t.sol 文件仅/CI 测试使用，永远不要部署到链上。供本地
 // ─────────────────────────────────────────────────────────────────────────────
 
 pragma solidity ^0.8.13;
@@ -56,7 +75,7 @@ contract HelloWorldTest is Test {
     function test_DefaultGreeting() public view {
         // assertEq 是 forge-std/Test.sol 提供的断言：
         //   左边 = 实际值，右边 = 期望值；不相等就让用例失败。
-        assertEq(hello.greet(), "Hello, World");
+        assertEq(hello.greet(), "Hello, linghuan");
     }
 
 

@@ -167,6 +167,13 @@ contract TypesDemoTest is Test {
     function testFuzz_MappingAlwaysDefaultZero(address anyAddr) public view {
         assertEq(demo.balanceOf(anyAddr), 0);
     }
+
+    function testAddSore() public{
+        address add = address(0xabc);
+        uint256 score = 10;
+        demo.addScore(add,score);
+        assertEq(demo.scores(add), score);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

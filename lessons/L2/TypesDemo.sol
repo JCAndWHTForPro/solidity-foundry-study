@@ -16,6 +16,13 @@ contract TypesDemo {
     // 【知识点 1】值类型 vs 引用类型
     //
     //   ▶ 值类型：bool / int / uint / address / bytesN / enum
+    //
+    //     📌 字节相关类型说明：
+    //       • bytesN（N = 1~32）—— 值类型，定长字节序列
+    //         例如 bytes1, bytes4, bytes20, bytes32
+    //         bytes20 与 address 底层等价；bytes4 常用于函数选择器
+    //       • bytes —— 引用类型，动态长度字节数组（类似 uint8[] 但更紧凑省 gas）
+    //       • string —— 引用类型，动态长度 UTF-8 编码字节序列，本质上和 bytes 存储方式相同
     //     特点：赋值即「复制」，互不影响。
     //     局部变量不需要也不允许声明数据位置，默认直接放在 EVM 栈（stack）上
     //     （必要时编译器会借助 memory，但语法层面不能写 memory/storage/calldata）。
@@ -103,7 +110,7 @@ contract TypesDemo {
     }
     // struct 数组：多个 User 排在一起，可遍历
     // ─────────────────────────────────────────────────────────────────
-    // 【补充】Solidity 声明中各关键字的书写顺序
+    // 【补充】Solidity 声明中各关键字的书写顺序（详见本章 README.md）
     //
     // ┌─ 状态变量（State Variable）──────────────────────────────┐
     // │  类型  可见性  [constant | immutable]  变量名             │
@@ -178,7 +185,7 @@ contract TypesDemo {
     mapping(address => uint256) public balanceOf;
     mapping(uint256 => User) public userById;      // uint256 作为 key
     mapping(bytes32 => bool) public usedHash;      // bytes32 作为 key
-
+    mapping(address => uint256) public scores;
 
     // ═════════════════════════════════════════════════════════════════════
     // 【知识点 5】构造函数：用来初始化状态变量
@@ -215,7 +222,7 @@ contract TypesDemo {
     // ═════════════════════════════════════════════════════════════════════
 
     /// 演示 calldata：外部传入的数组只读、最省 gas
-    function setNumbers(uint256[] calldata _numbers) external {
+    function setNumbers(uint256[] memory _numbers) external {
         // 不能写 _numbers[0] = 1; 因为 calldata 是只读的
         numbers = _numbers;     // 这一步会把 calldata 拷贝进 storage
     }
@@ -257,6 +264,10 @@ contract TypesDemo {
             score: 0,
             active: true
         }));
+    }
+
+    function addScore(address add, uint256 score) external {
+        scores[add] = score;
     }
 
     function userCount() external view returns (uint256) {
@@ -304,6 +315,9 @@ contract TypesDemo {
     function isCallerOwner() external view returns (bool) {
         return _isOwner(msg.sender);
     }
+
+
+
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

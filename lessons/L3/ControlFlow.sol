@@ -40,6 +40,8 @@ contract ControlFlow {
     error NotWhitelisted(address caller);
     error InvalidScore(uint256 score, string reason);
     error NoScores();
+    error ExceesLimit(uint256 limit);
+    error NotExceed(string msg);
 
 
     // ═════════════════════════════════════════════════════════════════════
@@ -80,13 +82,20 @@ contract ControlFlow {
         if (paused) {
             revert ContractPaused();
         }
-        _;
+        _; // `_` 是 modifier 的占位符，代表"被修饰函数的函数体"，检查通过后会从这里继续执行函数逻辑
     }
 
     /// 只有白名单用户才能调用
     modifier onlyWhitelisted() {
         if (!whitelist[msg.sender]) {
             revert NotWhitelisted(msg.sender);
+        }
+        _;
+    }
+
+    modifier onlyWhenCounterBelow(uint256 limit){
+        if(counter>limit){
+            revert ExceesLimit(limit);
         }
         _;
     }
@@ -149,6 +158,7 @@ contract ControlFlow {
 
     /// 求 scores 数组之和（演示 for 循环读 storage 数组）
     function totalScore() external view returns (uint256 total) {
+        // 如果可以被所有人push，这里score遍历会消耗完所有的gas
         for (uint256 i = 0; i < scores.length; i++) {
             total += scores[i];
         }
@@ -194,7 +204,10 @@ contract ControlFlow {
 
     /// 演示 require：添加分数前校验
     function addScore(uint256 score) external whenNotPaused {
-        require(score <= 100, "score must be <= 100");
+//        require(score <= 100, "score must be <= 100");
+        if(score>100){
+            revert NotExceed("score must be <= 100");
+        }
         scores.push(score);
         emit ScoreAdded(score);
     }
@@ -212,7 +225,7 @@ contract ControlFlow {
     }
 
     /// 演示 assert：counter 溢出理论上不可能（uint256 很大）
-    function increment() external whenNotPaused {
+    function increment() external whenNotPaused onlyWhenCounterBelow(100) {
         uint256 oldCounter = counter;
         counter += 1;
         emit CounterIncremented(msg.sender, counter);
@@ -248,6 +261,9 @@ contract ControlFlow {
     /// 添加白名单（onlyOwner + whenNotPaused 叠加）
     function addToWhitelist(address user) external onlyOwner whenNotPaused {
         whitelist[user] = true;
+    }
+    function removeWhiteList( address user) external onlyOwner{
+        delete whitelist[user];
     }
 
     /// 只有白名单用户才能调用的"VIP 功能"

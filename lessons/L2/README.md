@@ -92,6 +92,38 @@ Solidity 类型系统
 
 ---
 
+## 🧠 速查表：address 类型赋值规则
+
+> Solidity 类型系统很严格，**整数和地址是不同类型，不能隐式转换**。
+
+### 什么时候需要 `address(...)`？
+
+| 写法 | 能否直接赋给 address | 原因 |
+|---|---|---|
+| `0xAb5801c7D97B62f2dF7B6eCdaaD9A4d8f2A57c8`（40位+校验和） | ✅ 可以 | 编译器识别为地址字面量 |
+| `0xABC`（不满40位） | ❌ 不行 | 编译器当作整数，需要 `address(...)` |
+| `address(0)` | ✅ 可以 | 显式转换，零地址 |
+| `address(0xA11CE)` | ✅ 可以 | 显式转换，前面自动补零到20字节 |
+
+```solidity
+// ✅ 完整 40 位 + EIP-55 校验和大小写 → 编译器认为这就是地址
+address user = 0xAb5801c7D97B62f2dF7B6eCdaaD9A4d8f2A57c8;
+
+// ❌ 不满 40 位 → 编译器当作整数，报错
+address alice = 0xA11CE;
+
+// ✅ 显式转换，测试里最常见的简写
+address alice = address(0xA11CE);
+address dead  = address(0xDEAD);
+address zero  = address(0);
+```
+
+### 一句话记忆
+
+> **不满 40 位十六进制的数在 Solidity 眼里是整数不是地址，必须用 `address(...)` 做显式类型转换。**
+
+---
+
 ## ⏱️ 课堂节奏（2 小时）
 
 | 阶段 | 时长 | 内容 |

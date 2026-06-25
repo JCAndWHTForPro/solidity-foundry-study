@@ -66,7 +66,12 @@ contract ControlFlowTest is Test {
     //   如果没有 revert，测试就会失败。
     // ═════════════════════════════════════════════════════════════════════
     function test_AddScoreRequireRevert() public {
-        vm.expectRevert("score must be <= 100");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ControlFlow.NotExceed.selector,
+                "score must be <= 100"
+            )
+        );
         cf.addScore(101);
     }
 

@@ -98,12 +98,73 @@ FOUNDRY_PROFILE=l3 forge script ControlFlow.s.sol:ControlFlowScript \
 
 ## 🧠 速查表：modifier 执行顺序
 
+### `_;` 是什么？
+
+`_;` 是 modifier 里的**占位符**，代表"被修饰的函数体"。`_;` **前面**的代码是前置检查，`_;` **后面**的代码是后置逻辑。
+
+```solidity
+modifier myMod() {
+    // ← 这里是"前"（_; 之前的代码）
+    doCheck();
+    _;          // ← 函数体在这里执行
+    // ← 这里是"后"（_; 之后的代码）
+    doCleanup();
+}
+```
+
+### 多个 modifier 嵌套 = 洋葱模型
+
 ```solidity
 function foo() external modA modB modC {
     // 函数体
 }
-// 执行顺序：modA 前 → modB 前 → modC 前 → 函数体 → modC 后 → modB 后 → modA 后
 ```
+
+实际执行展开后像嵌套的洋葱：
+
+```
+modA 的 _; 前面代码
+    modB 的 _; 前面代码
+        modC 的 _; 前面代码
+            函数体
+        modC 的 _; 后面代码
+    modB 的 _; 后面代码
+modA 的 _; 后面代码
+```
+
+执行顺序：**进去从外到内（A→B→C→函数体），出来从内到外（C→B→A）**
+
+### 具体示例
+
+```solidity
+modifier logA() {
+    console.log("进入 A");  // 前
+    _;
+    console.log("离开 A");  // 后
+}
+modifier logB() {
+    console.log("进入 B");  // 前
+    _;
+    console.log("离开 B");  // 后
+}
+function foo() external logA logB {
+    console.log("函数体");
+}
+// 输出：进入A → 进入B → 函数体 → 离开B → 离开A
+```
+
+### 实际中的情况
+
+90% 的 modifier 只有前置检查，`_;` 后面不写东西：
+
+```solidity
+modifier onlyOwner() {
+    require(msg.sender == owner);  // 只有前置检查
+    _;                              // 通过了就执行函数体，后面没代码
+}
+```
+
+所以日常遇到的多 modifier 叠加，只关心"前前前→函数体"的顺序就行。
 
 ---
 

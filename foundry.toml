@@ -31,4 +31,13 @@ script = "lessons/L3"
 out = "out-l3"
 libs = ["lib"]
 
+# ─── L4 教学专用 profile ──────────────────────────────────────────────────
+# 用法同 L1/L2/L3：FOUNDRY_PROFILE=l4 forge build / test / script
+[profile.l4]
+src = "lessons/L4"
+test = "lessons/L4"
+script = "lessons/L4"
+out = "out-l4"
+libs = ["lib"]
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

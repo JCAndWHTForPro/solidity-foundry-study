@@ -49,4 +49,13 @@ script = "lessons/L5"
 out = "out-l5"
 libs = ["lib"]
 
+# ─── L6 教学专用 profile ──────────────────────────────────────────────────
+# 用法同 L1~L5：FOUNDRY_PROFILE=l6 forge build / test / script
+[profile.l6]
+src = "lessons/L6"
+test = "lessons/L6"
+script = "lessons/L6"
+out = "out-l6"
+libs = ["lib"]
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

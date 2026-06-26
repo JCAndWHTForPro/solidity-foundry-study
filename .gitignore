@@ -1,9 +1,7 @@
 # ─── Foundry 标准忽略项 ──────────────────────────────────────────────────
-# 编译输出（默认 profile）
+# 编译输出（默认 profile + 所有教学 profile）
 out/
-# L1 / L2 教学 profile 的编译输出
-out-l1/
-out-l2/
+out-*/
 
 # 编译缓存
 cache/

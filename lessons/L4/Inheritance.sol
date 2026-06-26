@@ -19,6 +19,7 @@ pragma solidity ^0.8.20;
 // 【知识点 1】接口（Interface）
 //
 //   • 关键字：interface
+//   • 可见性：接口中的函数默认且必须是 external（不是 public！）
 //   • 规则：
 //     1) 不能有状态变量
 //     2) 不能有构造函数
@@ -81,7 +82,9 @@ abstract contract Animal is IAnimal {
     /// 注意：必须标注 virtual，告诉编译器"这个函数可以/需要被重写"
     function speak() external view virtual returns (string memory);
 
-    /// 已实现 + virtual：子合约可以重写，也可以不重写
+    /// 已实现但没有 virtual：子合约不能重写此函数（如果去掉下面函数签名里的 virtual 的话）
+    /// 注意：此处注释对应的函数签名仍然带有 virtual，所以子合约可以重写
+    /// 如果不写 virtual，则子合约无法 override 该函数，编译器会报错
     function description() external view virtual returns (string memory) {
         return string(abi.encodePacked("I am ", name));
     }
@@ -120,8 +123,10 @@ contract Dog is Animal {
     constructor(string memory _name, string memory sound_) Animal(_name) {
         _sound = sound_;
     }
-
     /// 实现接口的 speak()：必须写 override
+    /// Solidity 函数修饰符固定顺序：可见性 → 状态可变性 → virtual → override → returns(...)
+    /// 完整顺序：可见性(external/public/internal/private) → 状态可变性(pure/view/payable) → virtual → override → returns(...)
+    /// 本例即为：external view override returns(string memory)
     function speak() external view override returns (string memory) {
         return _sound;
     }
@@ -141,6 +146,62 @@ contract Dog is Animal {
 
 // ═════════════════════════════════════════════════════════════════════════════
 // 【知识点 5】多重继承 + C3 线性化
+//
+//   C3 线性化（C3 Linearization）是一种算法，用于确定多重继承时
+//   函数的调用顺序（即 MRO，Method Resolution Order，方法解析顺序）。
+//
+//   ┌─────────────────────────────────────────────────────────┐
+//   │  C3 算法简单理解：                                       │
+//   │                                                          │
+//   │  给定：contract C is A, B                                │
+//   │  线性化顺序 = C → B → A → 最终基类                      │
+//   │                                                          │
+//   │  规则：继承列表从左到右 = 从"最派生"到"最基础"           │
+//   │  即越靠右的合约越"基础"，越靠左的合约越"具体"           │
+//   └─────────────────────────────────────────────────────────┘
+//
+//   举例说明：
+//
+//     contract A { function hello() virtual { ... } }   // 基础
+//     contract B is A { function hello() virtual override { super.hello(); ... } }
+//     contract C is A { function hello() virtual override { super.hello(); ... } }
+//     contract D is B, C { function hello() override(B, C) { super.hello(); ... } }
+//
+//   D 的 C3 线性化顺序：D → C → B → A
+//   当 D 调用 super.hello() 时，调用链是：
+//     D.hello() → C.hello() → B.hello() → A.hello()
+//
+//   ⚠️  注意：若写成 contract D is C, B（顺序相反），则顺序变为：
+//     D.hello() → B.hello() → C.hello() → A.hello()
+//
+//   💡 Solidity 编译器规定：继承列表必须从"最基础"到"最派生"从左往右写，
+//      这里确实有些反直觉！我们来解释一下：
+//
+//   为什么 contract D is C, B 的顺序是 D → B → C → A，而不是 D → C → B → A？
+//
+//   C3 线性化的核心规则是：
+//     "继承列表中越靠右的越派生，越靠左的越基础"
+//   也就是说，is 后面的列表顺序是 从左(基础) 到右(派生)，即：
+//     contract D is A, B 意思是：B 比 A 更派生（B 更接近 D）
+//
+//   ⚠️  注意这里的"反直觉"来源：
+//     继承列表顺序 ≠ 调用顺序！
+//     继承列表是从左到右越来越"派生"（越左越基础），
+//     而 super 调用链是从"最派生"到"最基础"依次调用。
+//
+//   所以 contract D is C, B 中：
+//     - C 在左边 → C 更基础
+//     - B 在右边 → B 更派生（更接近 D）
+//     - C3 线性化顺序：D → B → C → A
+//
+//   反过来 contract D is B, C 中：
+//     - B 在左边 → B 更基础
+//     - C 在右边 → C 更派生（更接近 D）
+//     - C3 线性化顺序：D → C → B → A
+//
+//   💡 记忆口诀：is 列表中"越靠右越优先被调用"（越靠右越派生），
+//      super 链的顺序就是"从最派生到最基础"依次执行。
+//      否则编译器会报错（Linearization of inheritance graph impossible）。
 //
 //   • Solidity 支持多重继承：contract C is A, B { ... }
 //   • 继承顺序很重要！从"最基础"到"最派生"从左往右写
@@ -283,6 +344,23 @@ contract DogV2 is Animal {
 }
 
 /// PetShopV2：正确的多继承 + internal 复用模式
+/*
+这是一个关于 C3 线性化的问题。
+
+`contract PetShopV2 is Countable, Pausable, DogV2` 之所以编译报错，是因为违反了 C3 线性化规则：
+
+**继承列表必须从左（最基础）到右（最派生）**。
+
+- `DogV2` 继承自 `Animal`，`Animal` 继承自 `IAnimal`
+- `Pausable` 和 `Countable` 是独立的 abstract 合约
+- 将 `DogV2` 写在最右边是正确的（它是最派生的），而 `Countable, Pausable` 写在左边（更基础）
+
+如果写成 `is Countable, Pausable, DogV2`：
+- 编译器会尝试线性化：`PetShopV2 → DogV2 → Pausable → Countable`
+- 但由于 `DogV2` 本身的继承链（`DogV2 → Animal → IAnimal`）与左边的顺序产生矛盾，C3 算法无法构建一致的线性化顺序，导致报错：`Linearization of inheritance graph impossible`。
+
+正确写法是 `is DogV2, Pausable, Countable`（最派生的 `DogV2` 放最左，或保持目前的顺序），选中代码本身已经是正确的：
+*/
 contract PetShopV2 is DogV2, Pausable, Countable {
     constructor(string memory _name, string memory _sound)
         DogV2(_name, _sound)

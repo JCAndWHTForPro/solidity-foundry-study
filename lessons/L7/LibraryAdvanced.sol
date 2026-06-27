@@ -456,10 +456,22 @@ contract LibraryDemo {
 
     /// @notice 演示 abi.decode：从 bytes 解码回具体类型
     function decodeDemo(bytes calldata data) external pure returns (address addr, uint256 amount) {
+        // abi.decode 的第二个参数 (address, uint256) 是"类型元组"，
+        // 告诉编译器要把 bytes 解码成哪些类型。
+        // 它的返回值其实是一个元组（tuple），包含两个值：
+        //   第一个是 address 类型，第二个是 uint256 类型。
+        // 左边的 (addr, amount) 是"解构赋值"，把元组中的值分别赋给两个变量。
+        // 💡 类比 Java：类似于 Map.Entry<K,V> entry = ...; K key = entry.getKey(); V val = entry.getValue();
+        //    Solidity 用元组一步完成了解构。
         (addr, amount) = abi.decode(data, (address, uint256));
     }
 
     /// @notice 演示 abi.encodeWithSignature：构造完整的 calldata
+    /// @dev 这在实际开发中非常重要！使用 address.call{value: ...}(data) 进行
+    ///      ETH 转账并调用函数时，data 就是通过 abi.encodeWithSignature 构造的。
+    ///      例如：to.call{value: 1 ether}(abi.encodeWithSignature("deposit(uint256)", amount))
+    ///      这样可以在转账 ETH 的同时调用目标合约的指定函数。
+    ///      💡 类比 Java：类似于构造一个 HTTP 请求（方法名 + 参数序列化后发送）
     function encodeCallDemo(address to, uint256 amount) external pure returns (bytes memory) {
         return abi.encodeWithSignature("transfer(address,uint256)", to, amount);
     }

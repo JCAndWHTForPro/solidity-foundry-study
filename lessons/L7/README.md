@@ -196,6 +196,170 @@ keccak256(abi.encodePacked("ab", "c")) == keccak256(abi.encodePacked("a", "bc"))
 
 ---
 
+## ❓ 常见疑问解答
+
+### Q1: Solidity 的异常分类有哪些？
+
+Solidity 中所有异常的本质都是 **revert**（回滚交易状态），按来源和编码方式分为三大类：
+
+| 类型 | 触发方式 | ABI 编码 | 典型场景 |
+|------|---------|----------|----------|
+| **Error(string)** | `require(cond, "msg")` / `revert("msg")` | `abi.encodeWithSignature("Error(string)", msg)` | 输入校验、权限检查 |
+| **Panic(uint256)** | `assert(false)` / 编译器自动插入 | `abi.encodeWithSignature("Panic(uint256)", code)` | 内部不变量违反、数学溢出 |
+| **Custom Error** | `revert MyError(...)` | `abi.encodeWithSelector(MyError.selector, ...)` | 省 gas 的结构化错误（0.8.4+） |
+
+还有第四种：**空 revert**（`revert()` 或 transfer 失败），无数据。
+
+---
+
+### Q2: Panic 错误码完整对照表
+
+| Panic Code | 含义 | 触发场景 |
+|-----------|------|----------|
+| `0x00` | 通用 panic | 编译器插入的通用断言 |
+| `0x01` | assert 失败 | `assert(false)` |
+| `0x11` | 算术溢出/下溢 | `uint8(255) + 1`（0.8+ 默认检查） |
+| `0x12` | 除以零 | `x / 0` 或 `x % 0` |
+| `0x21` | 枚举越界 | 转换到不存在的枚举值 |
+| `0x22` | 存储编码错误 | 访问损坏的 storage |
+| `0x31` | pop 空数组 | `arr.pop()` 但数组为空 |
+| `0x32` | 数组越界 | `arr[100]` 但 length=5 |
+| `0x41` | 内存分配过大 | `new uint[](2**64)` |
+| `0x51` | 未初始化函数指针 | 调用未赋值的 internal 函数变量 |
+
+---
+
+### Q3: require / revert / assert 该怎么选？
+
+| 关键字 | 用途 | 剩余 gas | 推荐场景 |
+|--------|------|---------|----------|
+| `require(cond, "msg")` | 校验外部输入/前置条件 | 退还剩余 gas | 参数校验、权限、余额检查 |
+| `revert CustomError()` | 同上，但更省 gas | 退还剩余 gas | **推荐替代 require** |
+| `assert(cond)` | 检查内部不变量 | 退还剩余 gas（0.8+） | 不应该发生的情况 |
+
+```solidity
+// require — 检查用户输入
+require(amount > 0, "Zero amount");
+
+// Custom Error — 更省 gas 的方式（推荐）
+error ZeroAmount();
+if (amount == 0) revert ZeroAmount();
+
+// assert — 检查内部逻辑不变量
+assert(totalSupply == sumOfAllBalances);  // 如果失败说明有 bug
+```
+
+---
+
+### Q4: try/catch 能捕获内部函数的异常吗？
+
+**不能。** try/catch 只能用于 **外部调用**（包括 `this.func()` 自调用）：
+
+```solidity
+// ✅ 可以 catch — 外部调用
+try externalContract.foo() returns (uint result) {
+    // 成功
+} catch Error(string memory reason) {
+    // require/revert("msg")
+} catch Panic(uint code) {
+    // assert 失败、溢出、越界
+} catch (bytes memory data) {
+    // Custom Error、空 revert
+}
+
+// ❌ 不能 catch — 内部调用
+// try internalFunc() { ... }  // 编译报错！
+
+// ✅ 变通：用 this 变成外部调用（会消耗更多 gas）
+try this.myFunc() { ... } catch { ... }
+```
+
+**关键区别**：内部函数的异常会直接冒泡（bubble up），无法在同一合约内拦截。
+
+---
+
+### Q5: 和传统语言（Java/Python）的异常处理有什么区别？
+
+| 特性 | Java/Python | Solidity |
+|------|------------|----------|
+| 异常类型 | 丰富的异常类继承体系 | 只有 3 种编码格式 |
+| 能 catch 吗 | 随时 try/catch | 只能 catch **外部调用** |
+| 内部函数异常 | 可以 catch | **不能 catch，直接冒泡** |
+| 异常后状态 | 取决于代码（可能半修改） | **整个调用链状态回滚** |
+| 性能代价 | 栈展开 | gas 消耗 |
+| 推荐做法 | 能 catch 就 catch | 尽量在入口就 require 检查 |
+
+> **Solidity 哲学：与其 catch 异常再修复，不如在入口用 require 严格校验，不满足条件就直接回滚。**
+
+---
+
+### Q6: `uint[] memory arr;` 声明动态数组的默认值是什么？
+
+声明但不初始化时，是一个**长度为 0 的空数组**：
+
+```solidity
+uint[] memory arr;
+// arr.length == 0
+// 不能直接 arr[0] = 1（会越界 revert）
+```
+
+正确初始化方式：
+
+```solidity
+// 用 new 指定长度（元素全为默认值 0）
+uint[] memory arr = new uint[](5);
+// arr.length == 5, arr[0]~arr[4] 全为 0
+
+// 从 storage 数组深拷贝
+uint[] memory copy = storageArray;
+```
+
+各类型元素的默认值：
+
+| 类型 | 默认值 |
+|------|--------|
+| `uint[]` | 元素全为 `0` |
+| `bool[]` | 元素全为 `false` |
+| `address[]` | 元素全为 `address(0)` |
+
+---
+
+### Q7: memory 数组都是定长的吗？和 storage 数组有什么区别？
+
+**是的，memory 数组一旦创建长度就固定了，不能增删。** 但有两种"固定"方式：
+
+| 声明方式 | 长度何时确定 | 能否用变量定长度 |
+|---------|------------|----------------|
+| `uint[5] memory arr` | **编译时**确定，永远是 5 | 不能 |
+| `uint[] memory arr = new uint[](n)` | **运行时**确定，取决于 n | 可以 |
+
+```solidity
+function example(uint size) external pure {
+    uint[3] memory fixed3;                    // 编译时定长
+    uint[] memory dynamic = new uint[](size); // 运行时定长
+    
+    // 两者创建后都不能 push/pop
+    // fixed3.push(1);   ❌
+    // dynamic.push(1);  ❌
+}
+```
+
+**Storage vs Memory 数组能力对比：**
+
+| 操作 | storage 数组 | memory 数组 |
+|------|-------------|------------|
+| 声明位置 | 合约状态变量 | 函数内部 |
+| 生命周期 | 永久（链上） | 函数执行期间 |
+| `push(x)` | ✅ 长度 +1 | ❌ 不可以 |
+| `pop()` | ✅ 长度 -1 | ❌ 不可以 |
+| 动态改长度 | ✅ 可以 | ❌ 不可以 |
+| `arr[i] = x` | ✅ | ✅ |
+| Gas 成本 | 贵（写 ~20000 gas） | 便宜 |
+
+> **总结：memory 数组本质上都是"定长"的，`uint[]` 只是允许在运行时决定长度是多少，一旦 `new` 出来就锁死。真正能动态增删的只有 storage 数组的 push/pop。**
+
+---
+
 ## 📝 课后作业
 
 1. **实践题**：写一个 `AddressLib` library，包含 `isContract(address)` 函数（用 `addr.code.length > 0` 判断），用 using for 附加到 address 类型，写测试验证。

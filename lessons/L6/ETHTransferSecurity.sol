@@ -274,6 +274,15 @@ contract SecureBank {
         totalDeposits -= amount;
 
         // Interactions
+        // 💡 这是 Solidity 的"解构赋值"（Destructuring Assignment）：
+        //    .call() 返回两个值：(bool success, bytes memory returnData)
+        //    写成 (bool success, ) 表示只接收第一个返回值，第二个用逗号占位丢弃
+        //    类比 Java：相当于 Pair<Boolean, byte[]> result = call(...);
+        //              boolean success = result.getFirst(); // 忽略 second
+        //
+        // 💡 {value: amount} 是"函数调用选项"（Function Call Options），
+        //    用花括号附带在 .call 上，表示本次调用随附发送 amount 数量的 ETH
+        //    类似于 HTTP 请求里附带 header/body 参数
         (bool success, ) = payable(msg.sender).call{value: amount}("");
         if (!success) {
             revert TransferFailed(msg.sender, amount);

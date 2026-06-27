@@ -367,6 +367,79 @@ error InsufficientBalance(uint256 available, uint256 required);
 
 ---
 
+## ❓ 常见疑问解答
+
+### Q1: Solidity 有 import 语法吗？
+
+有，而且支持多种写法：
+
+```solidity
+// 1. 全量导入（不推荐，污染命名空间）
+import "./MyLib.sol";
+
+// 2. 命名导入（推荐 ✅）
+import {MyToken, IERC20} from "./ERC20Token.sol";
+
+// 3. 别名导入（避免命名冲突）
+import {MyToken as Token} from "./ERC20Token.sol";
+
+// 4. 全局别名导入（整个文件作为命名空间）
+import * as TokenLib from "./ERC20Token.sol";
+// 使用：TokenLib.MyToken
+```
+
+路径可以是：
+- **相对路径**：`./Utils.sol`、`../shared/Base.sol`
+- **remappings 映射路径**：`"forge-std/Test.sol"` → 实际找 `lib/forge-std/src/Test.sol`
+- **URL**（仅 Remix 等在线 IDE 用，不推荐）
+
+---
+
+### Q2: `@openzeppelin/contracts/...` 带 @ 的路径去哪里找？需要下载吗？
+
+**需要先安装依赖 + 配置映射**，`@` 没有特殊语义，只是路径字符串的一部分（npm 生态的命名惯例）。
+
+**Foundry 中的安装流程：**
+
+```bash
+# 第一步：安装到 lib/ 目录（git submodule）
+forge install OpenZeppelin/openzeppelin-contracts
+
+# 第二步：配置 remappings.txt
+# 添加一行：
+@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
+```
+
+编译器拿到 `@openzeppelin/contracts/token/ERC20/ERC20.sol` 后：
+1. 查 remappings 有没有匹配的前缀
+2. 有 → 替换为实际路径 `lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol`
+3. 没有 → 报错 "Source not found"
+
+---
+
+### Q3: 导入的包在真实链上部署时怎么处理？
+
+**import 只是告诉编译器"去哪找源码"，编译后所有代码被打包成一坨字节码，部署的是字节码，不是源文件。**
+
+```
+你的代码 + OpenZeppelin代码 + 所有依赖
+        ↓ 编译器合并 & 编译
+   一段完整的字节码（bytecode）
+        ↓ 部署
+   链上一个合约地址
+```
+
+| 场景 | 部署方式 | 链上结果 |
+|------|---------|----------|
+| `is ERC20`（继承） | 代码编译进你的合约 | 一个合约 |
+| Library（internal 函数） | 代码内联复制 | 一个合约 |
+| Library（public/external 函数） | Library 单独部署，你的合约链接它 | 两个合约 |
+| 接口（interface） | 不产生字节码，仅编译时类型检查 | 无 |
+
+> OpenZeppelin 从来不需要被单独"部署"——它的代码被编译进了你的合约里。链上只有字节码，没有源码。想让别人看到源码，需要在 Etherscan 上做**合约验证（verify）**。
+
+---
+
 ## 🧠 一句话总结
 
 > **值类型直接拷贝，引用类型必须告诉编译器"住在哪"**；选错数据位置不仅多花 gas，还可能改不到你以为改的那个变量。

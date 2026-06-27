@@ -209,6 +209,60 @@ function withdraw(uint256 amount) external nonReentrant {
 
 ---
 
+### Q2: `to.call{value: 1 ether}(abi.encodeWithSignature("deposit(uint256)", amount))` 是先转账还是先执行函数？
+
+**先转 ETH，再执行函数**（但整体是原子的）。
+
+EVM 执行 `CALL` 操作码的内部顺序：
+
+```
+1. 检查调用者余额 >= 1 ether（不够则 revert）
+2. 将 1 ether 从调用者转给 to（to.balance += 1 ether）
+3. 开始执行 to 的 deposit(amount) 函数代码
+   └── 此时在 deposit 内部：
+       • msg.value == 1 ether  ✅ 已经可用
+       • address(this).balance 已经包含这 1 ether  ✅
+4. 如果 deposit 执行成功 → 整体成功
+5. 如果 deposit 执行 revert → ETH 转账也回滚（原子性）
+```
+
+**不存在中间状态**：要么全部成功（ETH + 函数执行），要么全部回滚。
+
+---
+
+### Q3: 那 `receive()` 函数在什么时候执行？
+
+`receive()` **只在 calldata 为空时触发**（纯 ETH 转账）。
+
+**EVM 函数路由规则：**
+
+```
+收到一笔调用
+│
+├── calldata 不为空？
+│   ├── 是 → 取前 4 字节匹配函数选择器
+│   │       ├── 匹配到函数 → 执行该函数（如 deposit）
+│   │       └── 没匹配到  → 执行 fallback()（若存在），否则 revert
+│   │
+│   └── 否（calldata 为空，纯转账）
+│       ├── 有 receive() → 执行 receive()
+│       ├── 没 receive() 但有 fallback() → 执行 fallback()
+│       └── 都没有 → revert（拒收 ETH）
+```
+
+**什么时候触发 receive()，什么时候不触发：**
+
+| 调用方式 | calldata | 执行谁 |
+|---------|----------|--------|
+| `to.call{value: 1 ether}("")` | 空 | `receive()` |
+| `to.call{value: 1 ether}(abi.encodeWithSignature("deposit(uint256)", amt))` | 有 | `deposit()` |
+| `to.call{value: 1 ether}(0xdeadbeef)` | 有，但不匹配任何函数 | `fallback()` |
+| `address(to).transfer(1 ether)` | 空 | `receive()` |
+
+> **一句话记忆：calldata 为空走 receive()，不为空走函数路由。带 {value} 的外部调用如果指定了函数名，receive() 不会参与。**
+
+---
+
 ## 📝 课后作业
 
 1. **思考题**：如果只在 `VulnerableBank.withdrawVulnerable()` 上加 `nonReentrant`，不加 CEI，能防御重入攻击吗？为什么？

@@ -160,6 +160,174 @@ require(msg.value >= 0.01 ether, "too little");  // 编译时常量
 
 ---
 
+# ❓ 常见疑问解答
+
+### Q1: payable 函数「附带 ETH」具体怎么附带？
+
+以太坊交易天然有一个 `value` 字段（和 `to`、`data` 并列），"附带 ETH" 就是填了这个字段。不同场景写法如下：
+
+| 场景 | 写法 |
+|---|---|
+| Solidity 合约内调用 | `vault.deposit{value: 1 ether}()` |
+| 底层 call | `address(vault).call{value: 1 ether}(abi.encodeWithSignature("deposit()"))` |
+| Foundry 测试 | `vm.deal(alice, 10 ether); vm.prank(alice); vault.deposit{value: 1 ether}();` |
+| 命令行 cast | `cast send <地址> "deposit()" --value 1ether ...` |
+| 前端 ethers.js | `contract.deposit({ value: ethers.parseEther("1.0") })` |
+
+> `payable` 关键字的作用：告诉编译器允许 `value > 0` 的调用进来；不加 payable，编译器会自动插入 `require(msg.value == 0)` 的检查。
+
+---
+
+### Q2: calldata 是什么？
+
+**calldata = 调用合约时随交易发送的原始字节数据。**
+
+一笔交易的三个核心字段：
+
+| 字段 | 含义 | 例子 |
+|---|---|---|
+| `to` | 发给谁 | 0x合约地址 |
+| `value` | 附带多少 ETH | 1 ether |
+| `data`（calldata） | 调用哪个函数 + 传什么参数 | 编码后的字节 |
+
+例如调用 `vault.deposit(100)` 时，交易的 data 字段为：
+
+```
+0xb6b55f25                                                           ← 前4字节 = 函数选择器
+0000000000000000000000000000000000000000000000000000000000000064     ← 参数 100 的 ABI 编码
+```
+
+纯转 ETH（不调函数）时，data 字段为空。
+
+> `calldata` 作为数据位置关键字时表示"只读的外部输入数据"，比 `memory` 更省 gas。
+
+---
+
+### Q3: msg.data 是什么内置变量？
+
+`msg` 是 Solidity 的全局对象，包含当前调用的元信息：
+
+| 内置变量 | 类型 | 含义 |
+|---|---|---|
+| `msg.sender` | `address` | 谁发起的调用 |
+| `msg.value` | `uint256` | 附带了多少 ETH（wei） |
+| `msg.data` | `bytes calldata` | 完整的调用数据（选择器 + 参数） |
+| `msg.sig` | `bytes4` | msg.data 的前 4 字节 = 函数选择器 |
+
+EVM 通过 `msg.data` 是否为空来决定走 `receive()` 还是 `fallback()`。
+
+---
+
+### Q4: msg.data 存的是调用者的数据还是被调用者的数据？
+
+**是「别人发给当前合约的调用数据」—— 站在被调用者视角看。**
+
+每一层合约调用都有独立的 `msg` 上下文：
+
+```
+外部用户 EOA
+  │  msg.data = "doSomething(vault)" 的编码
+  ▼
+Caller.doSomething()    ← 这里 msg.data 是用户发给 Caller 的
+  │  msg.data = "deposit(100)" 的编码
+  ▼
+Vault.deposit(100)      ← 这里 msg.data 是 Caller 发给 Vault 的
+```
+
+ 类比快递：`msg.data` = 快递单上写的指令（"请帮我存 100 块"），永远是收件人视角看到的内容。
+
+---
+
+### Q5: 使用 call 转账时，如何执行复杂逻辑？写在哪里？
+
+**复杂逻辑写在接收方的 `receive()` / `fallback()` 或显式 payable 函数里。**
+
+发送方只负责"发钱 + 检查成功"，接收方决定收到钱后做什么：
+
+```
+合约 A（发送方）                        合约 B（接收方）
+┌─────────────────────┐              ┌───────────────────────────────┐
+│ (bool ok,) =        │    call      │ receive() external payable {  │
+│   addr.call         │ ──────────►  │     balances[msg.sender] += …│
+│   {value: 1 ether}  │              │     _distributeRewards();     │
+│   ("");             │              │     emit Deposited(…);        │
+│ require(ok);        │              │ }                             │
+└─────────────────────┘              └───────────────────────────────┘
+```
+
+三种调用方式对应的入口：
+
+| A 怎么调用 | B 的哪个函数被触发 |
+|---|---|
+| `addr.call{value: 1 ether}("")` | `receive()`（data 为空） |
+| `addr.call{value: 1 ether}(abi.encodeWithSignature("deposit()"))` | B 的 `deposit()` 函数 |
+| `Vault(addr).deposit{value: 1 ether}()` | B 的 `deposit()` 函数（类型安全，最推荐） |
+
+为什么 `transfer`/`send` 不能做复杂逻辑？因为只给 2300 gas，连一次 SSTORE（20000 gas）都不够。`call` 转发全部剩余 gas，接收方才有资源执行复杂操作。
+
+```solidity
+// 接收方写法示例
+contract Vault {
+    mapping(address => uint256) public balances;
+
+    // 方式 1：receive() 处理纯转账
+    receive() external payable {
+        balances[msg.sender] += msg.value;
+        emit Deposited(msg.sender, msg.value);
+    }
+
+    // 方式 2（更推荐）：显式 payable 函数，语义更清晰
+    function deposit() external payable {
+        require(msg.value >= 0.01 ether, "too little");
+        balances[msg.sender] += msg.value;
+        _updateStaking(msg.sender);
+    }
+}
+```
+
+> 核心原则：**发送方只管发钱 + 检查返回值，复杂逻辑永远写在接收方。**
+
+---
+
+### Q6: `Vault(addr)` 可以把地址直接转换成合约对象吗？
+
+**是的。Solidity 允许把 `address` 直接类型转换为合约类型。**
+
+```solidity
+address addr = 0x1234...;
+
+// 把 address 转换为合约类型
+Vault vault = Vault(addr);
+vault.deposit{value: 1 ether}();
+```
+
+本质：不是"创建合约"，而是告诉编译器"请把这个地址当 Vault 来调用" —— 编译器根据 Vault 的 ABI 自动生成正确的 `msg.data`。
+
+**编译器不会验证**那个地址上是否真的部署了 Vault。如果地址错了，运行时才会 revert。
+
+两种写法的等价关系：
+
+```solidity
+// 写法 1：类型转换（推荐，类型安全）
+Vault(addr).deposit{value: 1 ether}();
+
+// 写法 2：底层 call（低级，无编译检查）
+(bool ok, ) = addr.call{value: 1 ether}(
+    abi.encodeWithSignature("deposit()")
+);
+require(ok);
+```
+
+| | 类型转换写法 | 底层 call 写法 |
+|---|---|---|
+| 类型安全 | 编译期检查函数名、参数类型 | 无检查，写错也能编译 |
+| 返回值 | 自动解码 | 需手动 `abi.decode` |
+| 失败行为 | 自动 revert + 冒泡错误 | 返回 `(false, ...)` 需手动处理 |
+
+> 类比：`Vault(addr)` 相当于 C 语言的指针类型转换 `(Vault*)addr` —— 告诉编译器"按这个类型来解读"。
+
+---
+
 ## 📝 课后作业
 
 1. 把 `deposit()` 的最小存款从 0.001 ether 改为 0.01 ether，跑测试观察哪些 case 会失败，然后修复测试。

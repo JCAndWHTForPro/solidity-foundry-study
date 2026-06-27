@@ -9,7 +9,7 @@ pragma solidity ^0.8.20;
 //    ETH 余额查询、msg.value、合约向外转账。
 //
 // Java 程序员注意：
-//   - 事件 ≈ 日志系统（但写在链上，前端可以实时订阅）
+//   - 事件 ≈ 日志系统（但写在链上，前端/Go后端均可实时订阅，Go 中可用 go-ethereum 的 SubscribeFilterLogs 监听）
 //   - payable ≈ 标注"这个方法可以接收钱"
 //   - receive/fallback ≈ 合约的"默认方法"（没调用任何函数时触发）
 // ─────────────────────────────────────────────────────────────────────────────
@@ -204,6 +204,20 @@ contract EventsAndETH {
         totalDeposits -= amount;
 
         // 再转账（用 call，推荐方式）
+        // payable(msg.sender) 解释：
+        // - msg.sender 的类型是 address，而非 address payable
+        // - 在 Solidity 中，只有 address payable 类型才能调用 .transfer()、.send()、.call{value:}() 等转账方法
+        // - payable(msg.sender) 是类型转换，把 address → address payable，表示"这个地址可以接收 ETH"
+        //
+        // 整行拆解：
+        // - payable(msg.sender)          → 将调用者地址转为 payable 类型
+        // - .call{value: amount}("")     → 向该地址发送 amount wei 的 ETH，"" 表示没有调用数据（纯转账）
+        // - (bool success, )             → call 返回两个值：(是否成功, 返回数据)，我们只关心是否成功，忽略返回数据
+        //
+        // 💡 类比 Java：相当于 ((Payable) msg.sender).transfer(amount)，先强转接口再调用方法
+        // msg.sender 是当前调用这个合约函数的地址（即调用者），
+        // 在 withdraw 场景中，就是发起提款请求的用户地址。
+        // 注意：如果合约 A 调用合约 B，那么在合约 B 中 msg.sender 就是合约 A 的地址。
         (bool success, ) = payable(msg.sender).call{value: amount}("");
         if (!success) {
             // 转账失败，恢复状态

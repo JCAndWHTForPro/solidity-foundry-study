@@ -52,8 +52,25 @@ pragma solidity ^0.8.20;
 //   用布尔变量或枚举标记"是否正在执行关键函数"，防止递归调用。
 //
 //   OpenZeppelin 标准实现：
+//
 //     uint256 private _status;
+//
+//     💡 可见性(private/public/internal)后面还可以跟这些修饰符：
+//       - constant  : 编译期确定，不占存储槽，必须在声明时赋值，不能修改
+//       - immutable : 部署时确定（可在 constructor 中赋值），之后不能修改，不占存储槽
+//       - (无修饰符) : 普通状态变量，存储在 storage 中，可以修改
+//
+//     对比：
+//       uint256 private constant X = 1;      // 编译时写死，gas 最省
+//       uint256 private immutable Y;         // 构造时赋值，gas 较省
+//       uint256 private z;                   // 运行时可改，gas 最贵（SSTORE/SLOAD）
+//
+//     类比 Java：
+//       constant  ≈ static final int X = 1;        (编译期常量)
+//       immutable ≈ final int y; (构造器中赋值)      (运行期常量)
+//       普通变量   ≈ private int z;                  (可变字段)
 //     uint256 private constant _NOT_ENTERED = 1;
+
 //     uint256 private constant _ENTERED = 2;
 //
 //     modifier nonReentrant() {
@@ -63,7 +80,10 @@ pragma solidity ^0.8.20;
 //         _status = _NOT_ENTERED;
 //     }
 //
-//   💡 用 uint256 不用 bool：因为 EVM 写 uint256 比 bool 更省 gas。
+//   💡 用 uint256 不用 bool：因为 EVM 中将存储槽从 0 改为非 0 需要 20000 gas（冷写入），
+//     而从非 0 改为非 0 只需 5000 gas（热写入）。使用 uint256 的 1 和 2（都是非零值）
+//     切换状态，避免了 0↔1 的昂贵转换；而 bool 的 false(0)↔true(1) 每次都触发冷写入。
+//     类比 Java：相当于用 int status=1/2 代替 boolean locked=false/true，底层执行效率更高。
 // ═════════════════════════════════════════════════════════════════════════════
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -139,17 +159,26 @@ contract VulnerableBank {
     event Withdrawn(address indexed user, uint256 amount);
 
     function deposit() external payable {
+        // msg.value 不是当前账户拥有多少钱，而是本次调用时随交易附带发送的 ETH 数量。
+        // 账户总余额是 address(msg.sender).balance，而 msg.value 只是这一次转入合约的金额。
+        // 类比 Java：msg.value 相当于本次 HTTP 请求体里的"转账金额"字段，不是账户余额。
         balances[msg.sender] += msg.value;
         emit Deposited(msg.sender, msg.value);
     }
 
     /// ❌ 漏洞版本：先转账，后更新余额
     function withdrawVulnerable() external {
+        // balances 中的钱是通过上面的 deposit() 函数存入的：
+        // 用户调用 deposit() 并附带 ETH（msg.value），合约就把金额累加到 balances[msg.sender]
         uint256 amount = balances[msg.sender];
         require(amount > 0, "no balance");
 
         // 危险：外部 call 先执行，余额还没扣
-        (bool success, ) = msg.sender.call{value: amount}("");
+        // 💡 在 Solidity 0.8.x 中，.call{value:} 对 address 和 address payable 都可用，
+        //    所以 msg.sender 不加 payable 也能编译通过。
+        //    但推荐加上 payable() 显式表达"向该地址发送 ETH"的意图（如 SecureBank 中那样）。
+        //    只有 .transfer() 和 .send() 才强制要求 address payable 类型。
+        (bool success, ) = payable(msg.sender).call{value: amount}("");
         require(success, "transfer failed");
 
         balances[msg.sender] = 0; // 更新太晚，重入已经发生
@@ -265,15 +294,23 @@ contract SecureBank {
 
     /// owner 提取合约剩余全部 ETH（不是用户存款，是手续费等）
     function ownerWithdraw() external onlyOwner nonReentrant {
-        uint256 amount = address(this).balance;
+        // Checks
+        // address(this).balance 是合约持有的全部 ETH，包括用户存款 + 手续费/直接转入的 ETH
+        // totalDeposits 追踪了所有用户通过 deposit() 存入的资金
+        // 两者之差就是"非用户存款"的部分（手续费、直接转入等），owner 只能提取这部分
+        // 💡 receive() 虽然会收 ETH 并 emit 事件，但没有更新 totalDeposits，
+        //    所以通过 receive() 直接转入的 ETH 也属于"手续费"范畴
+        uint256 amount = address(this).balance - totalDeposits;
         if (amount == 0) revert ZeroAmount();
 
+        // Effects：先发出事件（本函数无需修改其他状态变量，但 emit 也属于 effect）
+        emit OwnerWithdrawn(amount);
+
+        // Interactions：最后才进行外部调用
         (bool success, ) = payable(owner).call{value: amount}("");
         if (!success) {
             revert TransferFailed(owner, amount);
         }
-
-        emit OwnerWithdrawn(amount);
     }
 
     // ═════════════════════════════════════════════════════════════════════

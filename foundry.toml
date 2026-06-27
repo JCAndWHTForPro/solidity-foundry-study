@@ -58,4 +58,22 @@ script = "lessons/L6"
 out = "out-l6"
 libs = ["lib"]
 
+# ─── L7 教学专用 profile ──────────────────────────────────────────────────
+# 用法同 L1~L6：FOUNDRY_PROFILE=l7 forge build / test / script
+[profile.l7]
+src = "lessons/L7"
+test = "lessons/L7"
+script = "lessons/L7"
+out = "out-l7"
+libs = ["lib"]
+
+# ─── L8 教学专用 profile ──────────────────────────────────────────────────
+# 用法同 L1~L7：FOUNDRY_PROFILE=l8 forge build / test / script
+[profile.l8]
+src = "lessons/L8"
+test = "lessons/L8"
+script = "lessons/L8"
+out = "out-l8"
+libs = ["lib"]
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
